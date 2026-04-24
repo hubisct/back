@@ -1,6 +1,7 @@
 import json
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from werkzeug.security import generate_password_hash
 from models import Base, Enterprise, Product, User
 from seed_data import ENTERPRISES, USERS
 import os
@@ -34,12 +35,34 @@ def init_db(drop=False):
         )
         session.add(ent)
         for p in e.get("products", []):
+            price_mode = p.get("price_mode") or "single"
+            price_min = p.get("price_min")
+            price_max = p.get("price_max")
+            price = p.get("price", 0.0)
+            if price_mode == "range":
+                if price_min is None:
+                    price_min = price
+                if price_max is None:
+                    price_max = price_min
+                price = price_min
+            elif price_mode == "hidden":
+                price = 0.0
+                price_min = None
+                price_max = None
+            else:
+                price_mode = "single"
+                price_min = None
+                price_max = None
+
             prod = Product(
                 id=p["id"],
                 enterprise_id=e["id"],
                 name=p["name"],
                 description=p.get("description"),
-                price=p.get("price", 0.0),
+                price=price,
+                price_mode=price_mode,
+                price_min=price_min,
+                price_max=price_max,
                 image=p.get("image"),
             )
             session.add(prod)
@@ -49,7 +72,7 @@ def init_db(drop=False):
         user = User(
             id=u["id"],
             email=u["email"],
-            password=u["password"],
+            password=generate_password_hash(u["password"]),
             name=u.get("name"),
             role=u.get("role", "owner"),
             active=u.get("active", True),

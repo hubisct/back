@@ -47,6 +47,23 @@ venv\Scripts\activate      # Windows
 
 pip install -r requirements.txt
 python init_db.py
+```
+
+Resetar somente produtos (preserva empresas e usuarios):
+
+```
+python reset_products_only.py
+```
+
+Resetar e popular produtos fake novamente:
+
+```
+python reset_products_only.py --seed
+```
+
+Executar
+
+```
 python app.py
 ```
 
