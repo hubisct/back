@@ -90,9 +90,9 @@ python app.py
 | GET | `/api/health` | Health check |
 | GET | `/api/categories` | Lista categorias |
 | GET/POST | `/api/enterprises` | Listar / criar empreendimentos |
-| GET/PUT/DELETE | `/api/enterprises/:id` | Detalhe / editar / remover empreendimento |
-| POST | `/api/enterprises/:id/products` | Criar produto |
-| PUT/DELETE | `/api/enterprises/:id/products/:pid` | Editar / remover produto |
+| GET/PUT/DELETE | `/api/enterprises/<string:ent_id>` | Detalhe / editar / remover empreendimento |
+| POST | `/api/enterprises/<string:ent_id>/products` | Criar produto |
+| PUT/DELETE | `/api/enterprises/<string:ent_id>/products/<string:prod_id>` | Editar / remover produto |
 | GET/POST | `/api/users` | Listar / criar usuários |
 | POST | `/api/login` | Autenticação |
 | POST | `/api/upload` | Upload de arquivo |
