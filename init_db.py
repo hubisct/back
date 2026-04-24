@@ -1,6 +1,7 @@
 import json
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from werkzeug.security import generate_password_hash
 from models import Base, Enterprise, Product, User
 from seed_data import ENTERPRISES, USERS
 import os
@@ -49,7 +50,7 @@ def init_db(drop=False):
         user = User(
             id=u["id"],
             email=u["email"],
-            password=u["password"],
+            password=generate_password_hash(u["password"]),
             name=u.get("name"),
             role=u.get("role", "owner"),
             active=u.get("active", True),

@@ -7,6 +7,7 @@ import os
 import json
 import uuid
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 from validators import is_valid_email, is_valid_password, is_valid_brazil_phone, validate_base64_image
 
 BASE_DIR = os.path.dirname(__file__)
@@ -258,7 +259,7 @@ def users_list_create():
     new = User(
         id=payload.get("id") or f"user-{int(__import__('time').time())}",
         email=payload["email"],
-        password=payload["password"],
+        password=generate_password_hash(payload["password"]),
         name=payload.get("name"),
         role=payload.get("role", "owner"),
         enterprise_id=payload.get("enterpriseId"),
@@ -284,8 +285,8 @@ def login():
     if not is_valid_password(password):
         abort(400, "invalid password")
     session = Session()
-    user = session.query(User).filter_by(email=email, password=password, active=True).first()
-    if not user:
+    user = session.query(User).filter_by(email=email, active=True).first()
+    if not user or not check_password_hash(user.password, password):
         session.close()
         return jsonify({"ok": False}), 401
     data = {"id": user.id, "email": user.email, "name": user.name, "role": user.role, "enterpriseId": user.enterprise_id, "active": user.active}
