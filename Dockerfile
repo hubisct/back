@@ -23,4 +23,4 @@ RUN mkdir -p /app/uploads /app/data
 EXPOSE 5174
 
 # ---------- Initialize DB and run the app ----------
-CMD ["sh", "-c", "python init_db.py && python app.py"]
+CMD ["sh", "-c", "if [ ! -f \"$DATA_DIR/.db_initialized\" ]; then python init_db.py && touch \"$DATA_DIR/.db_initialized\"; fi && python app.py"]
