@@ -448,20 +448,10 @@ def login():
         abort(400, "invalid password")
     session = Session()
     user = session.query(User).filter_by(email=email, active=True).first()
-    
-    if not user:
+    if not user or not check_password_hash(user.password, password):
         session.close()
         return jsonify({"ok": False}), 401
-        
-    # Verifica se a senha está armazenada em texto puro (legado) e atualiza para hash
-    if user.password == password:
-        user.password = generate_password_hash(password, method="pbkdf2:sha256", salt_length=16)
-        session.add(user)
-        session.commit()
-    elif not check_password_hash(user.password, password):
-        session.close()
-        return jsonify({"ok": False}), 401
-        
+
     data = {"id": user.id, "email": user.email, "name": user.name, "role": user.role, "enterpriseId": user.enterprise_id, "active": user.active}
     session.close()
     return jsonify(data)

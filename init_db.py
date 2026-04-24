@@ -71,16 +71,25 @@ def init_db(drop=False):
 
     # Seed users
     for u in USERS:
-        user = User(
-            id=u["id"],
-            email=u["email"],
-            password=generate_password_hash(u["password"], method="pbkdf2:sha256", salt_length=16),
-            name=u.get("name"),
-            role=u.get("role", "owner"),
-            active=u.get("active", True),
-            enterprise_id=u.get("enterprise_id"),
-        )
-        session.add(user)
+        existing_user = session.query(User).filter_by(id=u["id"]).first()
+        if not existing_user:
+            user = User(
+                id=u["id"],
+                email=u["email"],
+                password=generate_password_hash(u["password"], method="pbkdf2:sha256", salt_length=16),
+                name=u.get("name"),
+                role=u.get("role", "owner"),
+                active=u.get("active", True),
+                enterprise_id=u.get("enterprise_id"),
+            )
+            session.add(user)
+
+    # Converter senhas em texto puro já existentes no banco para hashes seguros
+    all_users = session.query(User).all()
+    for db_user in all_users:
+        if not db_user.password.startswith("pbkdf2:sha256"):
+            db_user.password = generate_password_hash(db_user.password, method="pbkdf2:sha256", salt_length=16)
+            session.add(db_user)
 
     session.commit()
     session.close()
