@@ -259,7 +259,7 @@ def users_list_create():
     new = User(
         id=payload.get("id") or f"user-{int(__import__('time').time())}",
         email=payload["email"],
-        password=generate_password_hash(payload["password"]),
+        password=generate_password_hash(payload["password"], method="pbkdf2:sha256", salt_length=16),
         name=payload.get("name"),
         role=payload.get("role", "owner"),
         enterprise_id=payload.get("enterpriseId"),
@@ -270,6 +270,51 @@ def users_list_create():
     data = {"id": new.id, "email": new.email, "name": new.name, "role": new.role, "enterpriseId": new.enterprise_id, "active": new.active}
     session.close()
     return jsonify(data), 201
+
+
+@app.route("/api/users/<string:user_id>", methods=["PUT", "DELETE"])
+def update_delete_user(user_id):
+    session = Session()
+    user = session.get(User, user_id)
+    if not user:
+        session.close()
+        abort(404, "User not found")
+
+    if request.method == "PUT":
+        payload = request.json or {}
+        
+        # Validate email if provided
+        if "email" in payload:
+            if not is_valid_email(payload["email"]):
+                abort(400, "invalid email")
+            user.email = payload["email"]
+            
+        # Validate password if provided
+        if "password" in payload and payload["password"]:
+            if not is_valid_password(payload["password"]):
+                abort(400, "password must be at least 10 characters")
+            user.password = generate_password_hash(payload["password"], method="pbkdf2:sha256", salt_length=16)
+
+        if "name" in payload:
+            user.name = payload["name"]
+        if "role" in payload:
+            user.role = payload["role"]
+        if "enterpriseId" in payload:
+            user.enterprise_id = payload["enterpriseId"]
+        if "active" in payload:
+            user.active = payload["active"]
+
+        session.add(user)
+        session.commit()
+        data = {"id": user.id, "email": user.email, "name": user.name, "role": user.role, "enterpriseId": user.enterprise_id, "active": user.active}
+        session.close()
+        return jsonify(data)
+
+    if request.method == "DELETE":
+        session.delete(user)
+        session.commit()
+        session.close()
+        return jsonify({"ok": True})
 
 
 @app.route("/api/login", methods=["POST"])
@@ -286,9 +331,20 @@ def login():
         abort(400, "invalid password")
     session = Session()
     user = session.query(User).filter_by(email=email, active=True).first()
-    if not user or not check_password_hash(user.password, password):
+    
+    if not user:
         session.close()
         return jsonify({"ok": False}), 401
+        
+    # Verifica se a senha está armazenada em texto puro (legado) e atualiza para hash
+    if user.password == password:
+        user.password = generate_password_hash(password, method="pbkdf2:sha256", salt_length=16)
+        session.add(user)
+        session.commit()
+    elif not check_password_hash(user.password, password):
+        session.close()
+        return jsonify({"ok": False}), 401
+        
     data = {"id": user.id, "email": user.email, "name": user.name, "role": user.role, "enterpriseId": user.enterprise_id, "active": user.active}
     session.close()
     return jsonify(data)

@@ -50,7 +50,7 @@ def init_db(drop=False):
         user = User(
             id=u["id"],
             email=u["email"],
-            password=generate_password_hash(u["password"]),
+            password=generate_password_hash(u["password"], method="pbkdf2:sha256", salt_length=16),
             name=u.get("name"),
             role=u.get("role", "owner"),
             active=u.get("active", True),
