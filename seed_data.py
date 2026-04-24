@@ -154,14 +154,14 @@ ENTERPRISES: List[Dict] = [
 ]
 
 USERS = [
-    {"id": "admin-1", "email": "admin@hubis.ufsm.br", "password": "admin123", "name": "Administrador Hub IS", "role": "admin", "active": True},
-    {"id": "owner-1", "email": "costurandosonhos@email.com", "password": "senha123", "name": "Elisandra Rodrigues Dutra", "role": "owner", "enterprise_id": "costurando-sonhos", "active": True},
-    {"id": "owner-2", "email": "jura@email.com", "password": "senha123", "name": "Juraci Licht", "role": "owner", "enterprise_id": "mimos-artesanatos-jura", "active": True},
-    {"id": "owner-3", "email": "raquel.art@email.com", "password": "senha123", "name": "Raquel Dellinghausen", "role": "owner", "enterprise_id": "raquel-dellinghausen", "active": True},
-    {"id": "owner-4", "email": "vitrinesustentavel@email.com", "password": "senha123", "name": "Leandro Marcus Flores", "role": "owner", "enterprise_id": "vitrine-sustentavel", "active": True},
-    {"id": "owner-5", "email": "vedome@email.com", "password": "senha123", "name": "Vanessa Paese Maltez", "role": "owner", "enterprise_id": "vedome-co", "active": True},
-    {"id": "owner-6", "email": "deliciasdaana@email.com", "password": "senha123", "name": "Ana Julia Maciel Cardoso", "role": "owner", "enterprise_id": "delicias-ana-gourmet", "active": True},
-    {"id": "owner-7", "email": "harmonia@email.com", "password": "senha123", "name": "Cátia Cilene Morais Dutra", "role": "owner", "enterprise_id": "harmonia-preta", "active": True},
-    {"id": "owner-8", "email": "ciadiacono@email.com", "password": "senha123", "name": "Mailon Rodrigues Marques", "role": "owner", "enterprise_id": "cia-diacono", "active": True},
-    {"id": "owner-9", "email": "conectaebaoba@email.com", "password": "senha123", "name": "Grazielle Gonçalves da Fonseca", "role": "owner", "enterprise_id": "conecta-baoba", "active": True},
+    {"id": "admin-1", "email": "admin@hubis.ufsm.br", "password": "senhaadmin", "name": "Administrador Hub IS", "role": "admin", "active": True},
+    {"id": "owner-1", "email": "costurandosonhos@email.com", "password": "senhaempreendedor", "name": "Elisandra Rodrigues Dutra", "role": "owner", "enterprise_id": "costurando-sonhos", "active": True},
+    {"id": "owner-2", "email": "jura@email.com", "password": "senhaempreendedor", "name": "Juraci Licht", "role": "owner", "enterprise_id": "mimos-artesanatos-jura", "active": True},
+    {"id": "owner-3", "email": "raquel.art@email.com", "password": "senhaempreendedor", "name": "Raquel Dellinghausen", "role": "owner", "enterprise_id": "raquel-dellinghausen", "active": True},
+    {"id": "owner-4", "email": "vitrinesustentavel@email.com", "password": "senhaempreendedor", "name": "Leandro Marcus Flores", "role": "owner", "enterprise_id": "vitrine-sustentavel", "active": True},
+    {"id": "owner-5", "email": "vedome@email.com", "password": "senhaempreendedor", "name": "Vanessa Paese Maltez", "role": "owner", "enterprise_id": "vedome-co", "active": True},
+    {"id": "owner-6", "email": "deliciasdaana@email.com", "password": "senhaempreendedor", "name": "Ana Julia Maciel Cardoso", "role": "owner", "enterprise_id": "delicias-ana-gourmet", "active": True},
+    {"id": "owner-7", "email": "harmonia@email.com", "password": "senhaempreendedor", "name": "Cátia Cilene Morais Dutra", "role": "owner", "enterprise_id": "harmonia-preta", "active": True},
+    {"id": "owner-8", "email": "ciadiacono@email.com", "password": "senhaempreendedor", "name": "Mailon Rodrigues Marques", "role": "owner", "enterprise_id": "cia-diacono", "active": True},
+    {"id": "owner-9", "email": "conectaebaoba@email.com", "password": "senhaempreendedor", "name": "Grazielle Gonçalves da Fonseca", "role": "owner", "enterprise_id": "conecta-baoba", "active": True},
 ]

@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker
 from models import Base, Enterprise, Product, User
 import os
 import json
+from validators import is_valid_email, is_valid_password, is_valid_brazil_phone
 
 BASE_DIR = os.path.dirname(__file__)
 DB_PATH = os.path.join(BASE_DIR, "db.sqlite3")
@@ -64,6 +65,11 @@ def enterprises_list_create():
     payload = request.json or {}
     if not payload.get("name"):
         abort(400, "name required")
+    # validate optional contact fields
+    if payload.get("email") and not is_valid_email(payload.get("email")):
+        abort(400, "invalid email")
+    if payload.get("whatsapp") and not is_valid_brazil_phone(payload.get("whatsapp")):
+        abort(400, "invalid phone")
     new = Enterprise(
         id=payload.get("id") or payload["name"].lower().replace(" ", "-")[:80],
         name=payload["name"],
@@ -111,10 +117,14 @@ def enterprise_detail(ent_id):
             elif k == "category":
                 ent.category = v
             elif k == "whatsapp":
+                if v and not is_valid_brazil_phone(v):
+                    abort(400, "invalid phone")
                 ent.whatsapp = v
             elif k == "instagram":
                 ent.instagram = v
             elif k == "email":
+                if v and not is_valid_email(v):
+                    abort(400, "invalid email")
                 ent.email = v
         session.add(ent)
         session.commit()
@@ -203,6 +213,11 @@ def users_list_create():
     payload = request.json or {}
     if not payload.get("email") or not payload.get("password"):
         abort(400, "email and password required")
+    # validate email and password
+    if not is_valid_email(payload.get("email")):
+        abort(400, "invalid email")
+    if not is_valid_password(payload.get("password")):
+        abort(400, "password must be at least 10 characters")
     new = User(
         id=payload.get("id") or f"user-{int(__import__('time').time())}",
         email=payload["email"],
@@ -226,6 +241,11 @@ def login():
     password = payload.get("password")
     if not email or not password:
         abort(400, "email and password required")
+    # validate formats
+    if not is_valid_email(email):
+        abort(400, "invalid email")
+    if not is_valid_password(password):
+        abort(400, "invalid password")
     session = Session()
     user = session.query(User).filter_by(email=email, password=password, active=True).first()
     if not user:
