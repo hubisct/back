@@ -21,7 +21,7 @@ docker compose down
 
 A API estará disponível em `http://localhost:5174`.
 
-Na primeira execução, o banco de dados SQLite é criado e populado automaticamente com dados de exemplo (seed).
+Ao iniciar o ambiente com Docker, a inicialização do banco de dados SQLite é executada automaticamente, incluindo a carga de dados de exemplo (seed).
 
 ### Volumes persistentes
 
