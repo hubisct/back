@@ -11,7 +11,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from validators import is_valid_email, is_valid_password, is_valid_brazil_phone, validate_base64_image
 
 BASE_DIR = os.path.dirname(__file__)
-DATA_DIR = os.environ.get("DATA_DIR", BASE_DIR)
+DATA_DIR = os.environ.get("DATA_DIR") or BASE_DIR
+os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, "db.sqlite3")
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
