@@ -7,7 +7,9 @@ from seed_data import ENTERPRISES, USERS
 import os
 
 
-DB_PATH = os.path.join(os.environ.get("DATA_DIR", os.path.dirname(__file__)), "db.sqlite3")
+data_dir = os.environ.get("DATA_DIR") or os.path.dirname(__file__)
+os.makedirs(data_dir, exist_ok=True)
+DB_PATH = os.path.join(data_dir, "db.sqlite3")
 engine = create_engine(f"sqlite:///{DB_PATH}", echo=False, future=True)
 Session = sessionmaker(bind=engine)
 
