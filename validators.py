@@ -22,7 +22,7 @@ def is_valid_brazil_phone(phone: str) -> bool:
     if not phone or not isinstance(phone, str):
         return False
     # remove non-digit chars
-    digits = re.sub(r"\D", "", phone
+    digits = re.sub(r"\D", "", phone)
     # valid length: 10 (landline) or 11 (mobile)
     if len(digits) not in (10, 11):
         return False
