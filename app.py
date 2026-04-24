@@ -11,7 +11,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from validators import is_valid_email, is_valid_password, is_valid_brazil_phone, validate_base64_image
 
 BASE_DIR = os.path.dirname(__file__)
-DB_PATH = os.path.join(BASE_DIR, "db.sqlite3")
+DATA_DIR = os.environ.get("DATA_DIR") or BASE_DIR
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_PATH = os.path.join(DATA_DIR, "db.sqlite3")
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
@@ -54,6 +56,129 @@ Session = sessionmaker(bind=engine)
 app = Flask(__name__)
 CORS(app)
 
+PRICE_MODES = {"single", "range", "hidden"}
+
+
+def _coerce_price_number(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _infer_product_price_mode(product: Product) -> str:
+    mode = (product.price_mode or "").strip().lower()
+    if mode in PRICE_MODES:
+        return mode
+    if product.price_min is not None and product.price_max is not None:
+        return "range"
+    return "single"
+
+
+def normalize_product_payload(payload: dict, current_product: Product | None = None) -> dict:
+    raw_mode = payload.get("priceMode")
+    if raw_mode is None:
+        if current_product is None:
+            mode = "single"
+        else:
+            mode = _infer_product_price_mode(current_product)
+    else:
+        mode = str(raw_mode).strip().lower()
+
+    if mode not in PRICE_MODES:
+        abort(400, "priceMode inválido")
+
+    current_price = current_product.price if current_product is not None else None
+    current_price_min = current_product.price_min if current_product is not None else None
+    current_price_max = current_product.price_max if current_product is not None else None
+
+    if mode == "hidden":
+        return {
+            "price_mode": "hidden",
+            "price": 0.0,
+            "price_min": None,
+            "price_max": None,
+        }
+
+    if mode == "single":
+        price_value = payload.get("price", current_price)
+        price = _coerce_price_number(price_value)
+        if price is None:
+            abort(400, "price obrigatório para modo single")
+        if price < 0:
+            abort(400, "valores de preço não podem ser negativos")
+        return {
+            "price_mode": "single",
+            "price": price,
+            "price_min": None,
+            "price_max": None,
+        }
+
+    price_min_value = payload.get("priceMin", current_price_min)
+    price_max_value = payload.get("priceMax", current_price_max)
+    price_min = _coerce_price_number(price_min_value)
+    price_max = _coerce_price_number(price_max_value)
+
+    if price_min is None or price_max is None:
+        abort(400, "priceMin e priceMax obrigatórios para modo range")
+    if price_min < 0 or price_max < 0:
+        abort(400, "valores de preço não podem ser negativos")
+    if price_min > price_max:
+        abort(400, "priceMin não pode ser maior que priceMax")
+
+    return {
+        "price_mode": "range",
+        "price": price_min,
+        "price_min": price_min,
+        "price_max": price_max,
+    }
+
+
+def product_to_dict(product: Product) -> dict:
+    mode = _infer_product_price_mode(product)
+    if mode == "range":
+        price_min = product.price_min
+        price_max = product.price_max
+        if price_min is None:
+            price_min = product.price
+        if price_max is None:
+            price_max = product.price
+        return {
+            "id": product.id,
+            "name": product.name,
+            "description": product.description or "",
+            "image": product.image or "",
+            "price": float(price_min or 0.0),
+            "priceMode": "range",
+            "priceMin": float(price_min or 0.0),
+            "priceMax": float(price_max or 0.0),
+        }
+
+    if mode == "hidden":
+        return {
+            "id": product.id,
+            "name": product.name,
+            "description": product.description or "",
+            "image": product.image or "",
+            "price": 0.0,
+            "priceMode": "hidden",
+            "priceMin": None,
+            "priceMax": None,
+        }
+
+    return {
+        "id": product.id,
+        "name": product.name,
+        "description": product.description or "",
+        "image": product.image or "",
+        "price": float(product.price or 0.0),
+        "priceMode": "single",
+        "priceMin": None,
+        "priceMax": None,
+    }
+
+
 def enterprise_to_dict(ent: Enterprise):
     return {
         "id": ent.id,
@@ -66,16 +191,7 @@ def enterprise_to_dict(ent: Enterprise):
         "instagram": ent.instagram or "",
         "email": ent.email or "",
         "tags": ent.tags or [],
-        "products": [
-            {
-                "id": p.id,
-                "name": p.name,
-                "description": p.description or "",
-                "price": float(p.price or 0.0),
-                "image": p.image or "",
-            }
-            for p in ent.products
-        ],
+        "products": [product_to_dict(p) for p in ent.products],
     }
 
 
@@ -187,24 +303,22 @@ def create_product(ent_id):
     payload = request.json or {}
     if not payload.get("name"):
         abort(400, "name required")
+    normalized_price = normalize_product_payload(payload)
     pid = payload.get("id") or f"{ent_id}-{int(__import__('time').time())}"
     prod = Product(
         id=pid,
         enterprise_id=ent_id,
         name=payload["name"],
         description=payload.get("description"),
-        price=payload.get("price", 0.0),
+        price=normalized_price["price"],
+        price_mode=normalized_price["price_mode"],
+        price_min=normalized_price["price_min"],
+        price_max=normalized_price["price_max"],
         image=process_base64_image(payload.get("image")),
     )
     session.add(prod)
     session.commit()
-    data = {
-        "id": prod.id,
-        "name": prod.name,
-        "description": prod.description,
-        "price": float(prod.price or 0.0),
-        "image": prod.image or "",
-    }
+    data = product_to_dict(prod)
     session.close()
     return jsonify(data), 201
 
@@ -223,13 +337,16 @@ def modify_product(ent_id, prod_id):
                 prod.name = v
             elif k == "description":
                 prod.description = v
-            elif k == "price":
-                prod.price = v
             elif k == "image":
                 prod.image = process_base64_image(v)
+        normalized_price = normalize_product_payload(payload, current_product=prod)
+        prod.price = normalized_price["price"]
+        prod.price_mode = normalized_price["price_mode"]
+        prod.price_min = normalized_price["price_min"]
+        prod.price_max = normalized_price["price_max"]
         session.add(prod)
         session.commit()
-        data = {"id": prod.id, "name": prod.name, "description": prod.description, "price": float(prod.price or 0.0), "image": prod.image}
+        data = product_to_dict(prod)
         session.close()
         return jsonify(data)
 

@@ -1,0 +1,14 @@
+services:
+  backend:
+    build: .
+    container_name: hubis-backend
+    ports:
+      - "5174:5174"
+    volumes:
+      - uploads_data:/app/uploads
+      - db_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  uploads_data:
+  db_data:
