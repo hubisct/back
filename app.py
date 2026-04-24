@@ -1,20 +1,57 @@
-from flask import Flask, jsonify, request, abort
+from flask import Flask, jsonify, request, abort, send_from_directory
 from flask_cors import CORS
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from models import Base, Enterprise, Product, User
 import os
 import json
-from validators import is_valid_email, is_valid_password, is_valid_brazil_phone
+import uuid
+from werkzeug.utils import secure_filename
+from validators import is_valid_email, is_valid_password, is_valid_brazil_phone, validate_base64_image
 
 BASE_DIR = os.path.dirname(__file__)
 DB_PATH = os.path.join(BASE_DIR, "db.sqlite3")
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def process_base64_image(data_url):
+    if not data_url or not isinstance(data_url, str):
+        return data_url
+
+    data_url = data_url.strip()
+
+    if not data_url.startswith("data:image/"):
+        return data_url
+
+    try:
+        mime_type, file_data = validate_base64_image(data_url)
+
+        ext = mime_type.split("/")[1].lower()
+        if ext == "jpeg":
+            ext = "jpg"
+
+        filename = f"{uuid.uuid4().hex}.{ext}"
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+
+        with open(filepath, "wb") as f:
+            f.write(file_data)
+
+        base_url = request.host_url.rstrip("/")
+        return f"{base_url}/uploads/{filename}"
+
+    except ValueError as e:
+        abort(400, str(e))
+
 engine = create_engine(f"sqlite:///{DB_PATH}", echo=False, future=True)
 Session = sessionmaker(bind=engine)
 
 app = Flask(__name__)
 CORS(app)
-
 
 def enterprise_to_dict(ent: Enterprise):
     return {
@@ -74,7 +111,7 @@ def enterprises_list_create():
         id=payload.get("id") or payload["name"].lower().replace(" ", "-")[:80],
         name=payload["name"],
         category=payload.get("category", "Artesanato"),
-        cover_image=payload.get("coverImage"),
+        cover_image=process_base64_image(payload.get("coverImage")),
         short_description=payload.get("description"),
         full_description=payload.get("fullDescription"),
         whatsapp=payload.get("whatsapp"),
@@ -105,7 +142,7 @@ def enterprise_detail(ent_id):
         payload = request.json or {}
         for k, v in payload.items():
             if k == "coverImage":
-                ent.cover_image = v
+                ent.cover_image = process_base64_image(v)
             elif k == "description":
                 ent.short_description = v
             elif k == "fullDescription":
@@ -156,7 +193,7 @@ def create_product(ent_id):
         name=payload["name"],
         description=payload.get("description"),
         price=payload.get("price", 0.0),
-        image=payload.get("image"),
+        image=process_base64_image(payload.get("image")),
     )
     session.add(prod)
     session.commit()
@@ -188,7 +225,7 @@ def modify_product(ent_id, prod_id):
             elif k == "price":
                 prod.price = v
             elif k == "image":
-                prod.image = v
+                prod.image = process_base64_image(v)
         session.add(prod)
         session.commit()
         data = {"id": prod.id, "name": prod.name, "description": prod.description, "price": float(prod.price or 0.0), "image": prod.image}
@@ -254,6 +291,27 @@ def login():
     data = {"id": user.id, "email": user.email, "name": user.name, "role": user.role, "enterpriseId": user.enterprise_id, "active": user.active}
     session.close()
     return jsonify(data)
+
+
+@app.route('/uploads/<name>')
+def download_file(name):
+    return send_from_directory(UPLOAD_FOLDER, name)
+
+@app.route("/api/upload", methods=["POST"])
+def upload_file():
+    if 'file' not in request.files:
+        abort(400, "No file part")
+    file = request.files['file']
+    if file.filename == '':
+        abort(400, "No selected file")
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+        unique_filename = f"{uuid.uuid4().hex}.{ext}" if ext else uuid.uuid4().hex
+        file.save(os.path.join(UPLOAD_FOLDER, unique_filename))
+        return jsonify({"url": f"/uploads/{unique_filename}", "filename": unique_filename}), 201
+    else:
+        abort(400, "Invalid file type")
 
 
 if __name__ == "__main__":
