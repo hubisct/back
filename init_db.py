@@ -5,6 +5,7 @@ from werkzeug.security import generate_password_hash
 from models import Base, Enterprise, Product, User
 from seed_data import ENTERPRISES, USERS
 import os
+from decimal import Decimal
 
 
 data_dir = os.environ.get("DATA_DIR") or os.path.dirname(__file__)
@@ -40,7 +41,7 @@ def init_db(drop=False):
             price_mode = p.get("price_mode") or "single"
             price_min = p.get("price_min")
             price_max = p.get("price_max")
-            price = p.get("price", 0.0)
+            price = p.get("price", Decimal("0.00"))
             if price_mode == "range":
                 if price_min is None:
                     price_min = price
@@ -48,7 +49,7 @@ def init_db(drop=False):
                     price_max = price_min
                 price = price_min
             elif price_mode == "hidden":
-                price = 0.0
+                price = Decimal("0.00")
                 price_min = None
                 price_max = None
             else:

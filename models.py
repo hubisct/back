@@ -3,7 +3,7 @@ from sqlalchemy import (
     Column,
     String,
     Integer,
-    Float,
+    Numeric,
     Boolean,
     DateTime,
     ForeignKey,
@@ -39,10 +39,10 @@ class Product(Base):
     enterprise_id = Column(String, ForeignKey("enterprises.id"), nullable=False)
     name = Column(String, nullable=False)
     description = Column(Text)
-    price = Column(Float, default=0.0)
+    price = Column(Numeric(10, 2), default=0.0)
     price_mode = Column(String, nullable=True)
-    price_min = Column(Float, nullable=True)
-    price_max = Column(Float, nullable=True)
+    price_min = Column(Numeric(10, 2), nullable=True)
+    price_max = Column(Numeric(10, 2), nullable=True)
     image = Column(Text)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)

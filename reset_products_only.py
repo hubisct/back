@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from models import Product, Enterprise
 from seed_data import ENTERPRISES
+from decimal import Decimal
 
 
 BASE_DIR = os.path.dirname(__file__)
@@ -35,7 +36,7 @@ def seed_products(engine):
                 enterprise_id=ent_id,
                 name=p["name"],
                 description=p.get("description"),
-                price=p.get("price", 0.0),
+                price=p.get("price", Decimal("0.00")),
                 price_mode="single",
                 price_min=None,
                 price_max=None,

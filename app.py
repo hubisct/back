@@ -6,6 +6,7 @@ from models import Base, Enterprise, Product, User
 import os
 import json
 import uuid
+from decimal import Decimal
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from validators import is_valid_email, is_valid_password, is_valid_brazil_phone, validate_base64_image
@@ -62,8 +63,16 @@ PRICE_MODES = {"single", "range", "hidden"}
 def _coerce_price_number(value):
     if isinstance(value, bool):
         return None
-    if isinstance(value, (int, float)):
-        return float(value)
+    if isinstance(value, (int, float, Decimal)):
+        try:
+            return Decimal(str(value)).quantize(Decimal("0.00"))
+        except:
+            return None
+    if isinstance(value, str):
+        try:
+            return Decimal(value).quantize(Decimal("0.00"))
+        except:
+            return None
     return None
 
 
@@ -96,7 +105,7 @@ def normalize_product_payload(payload: dict, current_product: Product | None = N
     if mode == "hidden":
         return {
             "price_mode": "hidden",
-            "price": 0.0,
+            "price": Decimal("0.00"),
             "price_min": None,
             "price_max": None,
         }
