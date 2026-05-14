@@ -67,6 +67,7 @@ def init_db(drop=False):
                 price_min=price_min,
                 price_max=price_max,
                 image=p.get("image"),
+                images=p.get("images") or ([p.get("image")] if p.get("image") else []),
             )
             session.add(prod)
 

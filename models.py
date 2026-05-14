@@ -44,6 +44,7 @@ class Product(Base):
     price_min = Column(Numeric(10, 2), nullable=True)
     price_max = Column(Numeric(10, 2), nullable=True)
     image = Column(Text)
+    images = Column(JSON, default=[])
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

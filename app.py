@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request, abort, send_from_directory
 from flask_cors import CORS
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 from models import Base, Enterprise, Product, User
 import os
@@ -58,6 +58,17 @@ app = Flask(__name__)
 CORS(app)
 
 PRICE_MODES = {"single", "range", "hidden"}
+
+
+def ensure_schema():
+    Base.metadata.create_all(engine)
+    columns = {column["name"] for column in inspect(engine).get_columns("products")}
+    if "images" not in columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE products ADD COLUMN images JSON DEFAULT '[]'"))
+
+
+ensure_schema()
 
 
 def _coerce_price_number(value):
@@ -144,8 +155,69 @@ def normalize_product_payload(payload: dict, current_product: Product | None = N
     }
 
 
+def _normalize_image_list(value) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        abort(400, "images deve ser uma lista")
+
+    processed_images = []
+    for image in value:
+        if not image:
+            continue
+        if not isinstance(image, str):
+            abort(400, "images deve conter apenas strings")
+        processed_images.append(process_base64_image(image))
+
+    return processed_images
+
+
+def _product_images(product: Product) -> list[str]:
+    images = product.images or []
+    if isinstance(images, str):
+        try:
+            images = json.loads(images)
+        except json.JSONDecodeError:
+            images = []
+    if not isinstance(images, list):
+        images = []
+
+    clean_images = [
+        image.strip()
+        for image in images
+        if isinstance(image, str) and image.strip()
+    ]
+
+    primary_image = (product.image or "").strip()
+    if primary_image and primary_image not in clean_images:
+        clean_images.insert(0, primary_image)
+
+    return clean_images
+
+
+def normalize_product_images_payload(payload: dict, current_product: Product | None = None) -> list[str]:
+    if "images" in payload:
+        images = _normalize_image_list(payload.get("images"))
+        if not images and payload.get("image"):
+            image = process_base64_image(payload.get("image"))
+            return [image] if image else []
+        return images
+
+    if "image" in payload:
+        image = process_base64_image(payload.get("image"))
+        return [image] if image else []
+
+    if current_product is not None:
+        return _product_images(current_product)
+
+    return []
+
+
 def product_to_dict(product: Product) -> dict:
     mode = _infer_product_price_mode(product)
+    images = _product_images(product)
+    primary_image = images[0] if images else ""
+
     if mode == "range":
         price_min = product.price_min
         price_max = product.price_max
@@ -157,7 +229,8 @@ def product_to_dict(product: Product) -> dict:
             "id": product.id,
             "name": product.name,
             "description": product.description or "",
-            "image": product.image or "",
+            "image": primary_image,
+            "images": images,
             "price": float(price_min or 0.0),
             "priceMode": "range",
             "priceMin": float(price_min or 0.0),
@@ -169,7 +242,8 @@ def product_to_dict(product: Product) -> dict:
             "id": product.id,
             "name": product.name,
             "description": product.description or "",
-            "image": product.image or "",
+            "image": primary_image,
+            "images": images,
             "price": 0.0,
             "priceMode": "hidden",
             "priceMin": None,
@@ -180,7 +254,8 @@ def product_to_dict(product: Product) -> dict:
         "id": product.id,
         "name": product.name,
         "description": product.description or "",
-        "image": product.image or "",
+        "image": primary_image,
+        "images": images,
         "price": float(product.price or 0.0),
         "priceMode": "single",
         "priceMin": None,
@@ -313,6 +388,7 @@ def create_product(ent_id):
     if not payload.get("name"):
         abort(400, "name required")
     normalized_price = normalize_product_payload(payload)
+    product_images = normalize_product_images_payload(payload)
     pid = payload.get("id") or f"{ent_id}-{int(__import__('time').time())}"
     prod = Product(
         id=pid,
@@ -323,7 +399,8 @@ def create_product(ent_id):
         price_mode=normalized_price["price_mode"],
         price_min=normalized_price["price_min"],
         price_max=normalized_price["price_max"],
-        image=process_base64_image(payload.get("image")),
+        image=product_images[0] if product_images else "",
+        images=product_images,
     )
     session.add(prod)
     session.commit()
@@ -346,8 +423,10 @@ def modify_product(ent_id, prod_id):
                 prod.name = v
             elif k == "description":
                 prod.description = v
-            elif k == "image":
-                prod.image = process_base64_image(v)
+        if "images" in payload or "image" in payload:
+            product_images = normalize_product_images_payload(payload, current_product=prod)
+            prod.image = product_images[0] if product_images else ""
+            prod.images = product_images
         normalized_price = normalize_product_payload(payload, current_product=prod)
         prod.price = normalized_price["price"]
         prod.price_mode = normalized_price["price_mode"]
