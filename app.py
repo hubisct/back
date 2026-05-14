@@ -10,6 +10,7 @@ from decimal import Decimal
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from validators import is_valid_email, is_valid_password, is_valid_brazil_phone, validate_base64_image
+from image_utils import compress_image
 
 BASE_DIR = os.path.dirname(__file__)
 DATA_DIR = os.environ.get("DATA_DIR") or BASE_DIR
@@ -35,15 +36,15 @@ def process_base64_image(data_url):
     try:
         mime_type, file_data = validate_base64_image(data_url)
 
-        ext = mime_type.split("/")[1].lower()
-        if ext == "jpeg":
-            ext = "jpg"
+        # Compress image and convert to JPEG
+        compressed_data = compress_image(file_data)
+        ext = "jpg"
 
         filename = f"{uuid.uuid4().hex}.{ext}"
         filepath = os.path.join(UPLOAD_FOLDER, filename)
 
         with open(filepath, "wb") as f:
-            f.write(file_data)
+            f.write(compressed_data)
 
         base_url = request.host_url.rstrip("/")
         return f"{base_url}/uploads/{filename}"
@@ -478,10 +479,18 @@ def upload_file():
     if file.filename == '':
         abort(400, "No selected file")
     if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
-        unique_filename = f"{uuid.uuid4().hex}.{ext}" if ext else uuid.uuid4().hex
-        file.save(os.path.join(UPLOAD_FOLDER, unique_filename))
+        file_data = file.read()
+        try:
+            compressed_data = compress_image(file_data)
+        except Exception as e:
+            abort(400, f"Error processing image: {str(e)}")
+            
+        unique_filename = f"{uuid.uuid4().hex}.jpg"
+        filepath = os.path.join(UPLOAD_FOLDER, unique_filename)
+        
+        with open(filepath, "wb") as f:
+            f.write(compressed_data)
+            
         return jsonify({"url": f"/uploads/{unique_filename}", "filename": unique_filename}), 201
     else:
         abort(400, "Invalid file type")
