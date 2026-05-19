@@ -571,5 +571,7 @@ if __name__ == "__main__":
     # create DB if missing
     if not os.path.exists(DB_PATH):
         print("DB not found, run init_db.py to create and seed the database.")
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
-    app.run(host="0.0.0.0", port = port)
+    if len(sys.argv) == 3:
+      port = int(sys.argv[1])
+      debug = bool(sys.argv[2])
+    app.run(host="0.0.0.0", port=port, debug=debug)
