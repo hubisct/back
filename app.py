@@ -10,6 +10,7 @@ from decimal import Decimal
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from validators import is_valid_email, is_valid_password, is_valid_brazil_phone, validate_base64_image
+import sys
 
 BASE_DIR = os.path.dirname(__file__)
 DATA_DIR = os.environ.get("DATA_DIR") or BASE_DIR
@@ -570,4 +571,5 @@ if __name__ == "__main__":
     # create DB if missing
     if not os.path.exists(DB_PATH):
         print("DB not found, run init_db.py to create and seed the database.")
-    app.run(host="0.0.0.0", port=5174)
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
+    app.run(host="0.0.0.0", port = port)
