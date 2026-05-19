@@ -573,5 +573,5 @@ if __name__ == "__main__":
         print("DB not found, run init_db.py to create and seed the database.")
     if len(sys.argv) == 3:
       port = int(sys.argv[1])
-      debug = bool(sys.argv[2])
+      debug = bool(sys.argv[2] == "True")
     app.run(host="0.0.0.0", port=port, debug=debug)
