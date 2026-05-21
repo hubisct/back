@@ -51,7 +51,7 @@ def init_db(drop=False):
         cat_id = slug
         if session.get(Category, cat_id):
             cat_id = f"{slug}-{uuid.uuid4().hex[:6]}"
-        session.add(Category(id=cat_id, name=name))
+        session.add(Category(id=cat_id, name=name, color=None, emoji=None))
 
     # Seed enterprises and products
     for e in ENTERPRISES:

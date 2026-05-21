@@ -19,6 +19,8 @@ class Category(Base):
     __tablename__ = "categories"
     id = Column(String, primary_key=True)
     name = Column(String, unique=True, nullable=False)
+    color = Column(String)
+    emoji = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

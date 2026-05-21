@@ -66,10 +66,24 @@ DEFAULT_CATEGORIES = ["Artesanato", "Alimentação", "Moda", "Plantas", "Cosmét
 
 def ensure_schema():
     Base.metadata.create_all(engine)
-    columns = {column["name"] for column in inspect(engine).get_columns("products")}
-    if "images" not in columns:
-        with engine.begin() as connection:
-            connection.execute(text("ALTER TABLE products ADD COLUMN images JSON DEFAULT '[]'"))
+    inspector = inspect(engine)
+    if inspector.has_table("products"):
+        columns = {column["name"] for column in inspector.get_columns("products")}
+        if "images" not in columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE products ADD COLUMN images JSON DEFAULT '[]'"))
+
+    if inspector.has_table("categories"):
+        columns = {column["name"] for column in inspector.get_columns("categories")}
+        statements = []
+        if "color" not in columns:
+            statements.append("ALTER TABLE categories ADD COLUMN color TEXT")
+        if "emoji" not in columns:
+            statements.append("ALTER TABLE categories ADD COLUMN emoji TEXT")
+        if statements:
+            with engine.begin() as connection:
+                for statement in statements:
+                    connection.execute(text(statement))
 
 
 ensure_schema()
@@ -102,7 +116,12 @@ def _slugify(value: str) -> str:
 
 
 def _category_to_dict(category: Category) -> dict:
-    return {"id": category.id, "name": category.name}
+    return {
+        "id": category.id,
+        "name": category.name,
+        "color": category.color,
+        "emoji": category.emoji,
+    }
 
 
 def _ensure_default_categories(session) -> None:
@@ -113,7 +132,7 @@ def _ensure_default_categories(session) -> None:
         cat_id = slug
         if session.get(Category, cat_id):
             cat_id = f"{slug}-{uuid.uuid4().hex[:6]}"
-        session.add(Category(id=cat_id, name=name))
+        session.add(Category(id=cat_id, name=name, color=None, emoji=None))
     session.commit()
 
 
@@ -341,6 +360,9 @@ def categories_list_create():
         session.close()
         abort(400, "name required")
 
+    color = payload.get("color")
+    emoji = payload.get("emoji")
+
     existing = session.query(Category).filter(func.lower(Category.name) == name.lower()).first()
     if existing:
         session.close()
@@ -351,7 +373,7 @@ def categories_list_create():
     if session.get(Category, cat_id):
         cat_id = f"{slug}-{uuid.uuid4().hex[:6]}"
 
-    category = Category(id=cat_id, name=name)
+    category = Category(id=cat_id, name=name, color=color, emoji=emoji)
     session.add(category)
     session.commit()
     data = _category_to_dict(category)
@@ -378,6 +400,11 @@ def category_detail(cat_id):
         if not name:
             session.close()
             abort(400, "name required")
+
+        if "color" in payload:
+            category.color = payload.get("color")
+        if "emoji" in payload:
+            category.emoji = payload.get("emoji")
 
         existing = session.query(Category).filter(func.lower(Category.name) == name.lower()).first()
         if existing and existing.id != category.id:
