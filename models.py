@@ -15,6 +15,14 @@ from sqlalchemy import JSON
 Base = declarative_base()
 
 
+class Category(Base):
+    __tablename__ = "categories"
+    id = Column(String, primary_key=True)
+    name = Column(String, unique=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Enterprise(Base):
     __tablename__ = "enterprises"
     id = Column(String, primary_key=True)

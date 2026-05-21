@@ -1,8 +1,11 @@
 import json
+import re
+import unicodedata
+import uuid
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from werkzeug.security import generate_password_hash
-from models import Base, Enterprise, Product, User
+from models import Base, Category, Enterprise, Product, User
 from seed_data import ENTERPRISES, USERS
 import os
 from decimal import Decimal
@@ -14,6 +17,18 @@ DB_PATH = os.path.join(data_dir, "db.sqlite3")
 engine = create_engine(f"sqlite:///{DB_PATH}", echo=False, future=True)
 Session = sessionmaker(bind=engine)
 
+DEFAULT_CATEGORIES = ["Artesanato", "Alimentação", "Moda", "Plantas", "Cosmética", "Reciclagem"]
+
+
+def _slugify(value: str) -> str:
+    if not value:
+        return ""
+    normalized = unicodedata.normalize("NFKD", value)
+    normalized = normalized.encode("ascii", "ignore").decode("ascii")
+    normalized = normalized.lower().strip()
+    normalized = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
+    return normalized
+
 
 def init_db(drop=False):
     if drop and os.path.exists(DB_PATH):
@@ -21,6 +36,22 @@ def init_db(drop=False):
     Base.metadata.create_all(engine)
 
     session = Session()
+
+    # Seed categories
+    category_names = set(DEFAULT_CATEGORIES)
+    for enterprise in ENTERPRISES:
+        if enterprise.get("category"):
+            category_names.add(enterprise["category"])
+
+    for name in sorted(category_names):
+        existing = session.query(Category).filter_by(name=name).first()
+        if existing:
+            continue
+        slug = _slugify(name) or f"category-{uuid.uuid4().hex[:8]}"
+        cat_id = slug
+        if session.get(Category, cat_id):
+            cat_id = f"{slug}-{uuid.uuid4().hex[:6]}"
+        session.add(Category(id=cat_id, name=name))
 
     # Seed enterprises and products
     for e in ENTERPRISES:

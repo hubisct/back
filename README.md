@@ -100,7 +100,8 @@ python app.py
 | Método | Rota | Descrição |
 |---|---|---|
 | GET | `/api/health` | Health check |
-| GET | `/api/categories` | Lista categorias |
+| GET/POST | `/api/categories` | Listar / criar categorias |
+| GET/PUT/DELETE | `/api/categories/<string:cat_id>` | Detalhe / editar / remover categoria |
 | GET/POST | `/api/enterprises` | Listar / criar empreendimentos |
 | GET/PUT/DELETE | `/api/enterprises/<string:ent_id>` | Detalhe / editar / remover empreendimento |
 | POST | `/api/enterprises/<string:ent_id>/products` | Criar produto |

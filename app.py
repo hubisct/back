@@ -1,11 +1,13 @@
 from flask import Flask, jsonify, request, abort, send_from_directory
 from flask_cors import CORS
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, inspect, text, func
 from sqlalchemy.orm import sessionmaker
-from models import Base, Enterprise, Product, User
+from models import Base, Category, Enterprise, Product, User
 import os
 import json
 import uuid
+import re
+import unicodedata
 from decimal import Decimal
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -59,6 +61,7 @@ app = Flask(__name__)
 CORS(app)
 
 PRICE_MODES = {"single", "range", "hidden"}
+DEFAULT_CATEGORIES = ["Artesanato", "Alimentação", "Moda", "Plantas", "Cosmética", "Reciclagem"]
 
 
 def ensure_schema():
@@ -86,6 +89,39 @@ def _coerce_price_number(value):
         except:
             return None
     return None
+
+
+def _slugify(value: str) -> str:
+    if not value:
+        return ""
+    normalized = unicodedata.normalize("NFKD", value)
+    normalized = normalized.encode("ascii", "ignore").decode("ascii")
+    normalized = normalized.lower().strip()
+    normalized = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
+    return normalized
+
+
+def _category_to_dict(category: Category) -> dict:
+    return {"id": category.id, "name": category.name}
+
+
+def _ensure_default_categories(session) -> None:
+    if session.query(Category).count() > 0:
+        return
+    for name in DEFAULT_CATEGORIES:
+        slug = _slugify(name) or f"category-{uuid.uuid4().hex[:8]}"
+        cat_id = slug
+        if session.get(Category, cat_id):
+            cat_id = f"{slug}-{uuid.uuid4().hex[:6]}"
+        session.add(Category(id=cat_id, name=name))
+    session.commit()
+
+
+def _get_category_by_id_or_name(session, cat_id: str) -> Category | None:
+    category = session.get(Category, cat_id)
+    if category:
+        return category
+    return session.query(Category).filter(Category.name == cat_id).first()
 
 
 def _infer_product_price_mode(product: Product) -> str:
@@ -285,11 +321,93 @@ def health():
     return jsonify({"status": "ok"})
 
 
-@app.route("/api/categories")
-def get_categories():
-    # simple static categories used in frontend
-    cats = ["Artesanato", "Alimentação", "Moda", "Plantas", "Cosmética", "Reciclagem"]
-    return jsonify(cats)
+@app.route("/api/categories", methods=["GET", "POST"])
+def categories_list_create():
+    session = Session()
+    _ensure_default_categories(session)
+
+    if request.method == "GET":
+        cats = session.query(Category).order_by(Category.name).all()
+        if request.args.get("format") == "objects":
+            data = [_category_to_dict(cat) for cat in cats]
+        else:
+            data = [cat.name for cat in cats]
+        session.close()
+        return jsonify(data)
+
+    payload = request.json or {}
+    name = (payload.get("name") or "").strip()
+    if not name:
+        session.close()
+        abort(400, "name required")
+
+    existing = session.query(Category).filter(func.lower(Category.name) == name.lower()).first()
+    if existing:
+        session.close()
+        abort(409, "category already exists")
+
+    slug = _slugify(name) or f"category-{uuid.uuid4().hex[:8]}"
+    cat_id = slug
+    if session.get(Category, cat_id):
+        cat_id = f"{slug}-{uuid.uuid4().hex[:6]}"
+
+    category = Category(id=cat_id, name=name)
+    session.add(category)
+    session.commit()
+    data = _category_to_dict(category)
+    session.close()
+    return jsonify(data), 201
+
+
+@app.route("/api/categories/<string:cat_id>", methods=["GET", "PUT", "DELETE"])
+def category_detail(cat_id):
+    session = Session()
+    category = _get_category_by_id_or_name(session, cat_id)
+    if not category:
+        session.close()
+        abort(404)
+
+    if request.method == "GET":
+        data = _category_to_dict(category)
+        session.close()
+        return jsonify(data)
+
+    if request.method == "PUT":
+        payload = request.json or {}
+        name = (payload.get("name") or "").strip()
+        if not name:
+            session.close()
+            abort(400, "name required")
+
+        existing = session.query(Category).filter(func.lower(Category.name) == name.lower()).first()
+        if existing and existing.id != category.id:
+            session.close()
+            abort(409, "category already exists")
+
+        old_name = category.name
+        if name != old_name:
+            category.name = name
+            ents = session.query(Enterprise).filter(Enterprise.category == old_name).all()
+            for ent in ents:
+                ent.category = name
+                session.add(ent)
+
+        session.add(category)
+        session.commit()
+        data = _category_to_dict(category)
+        session.close()
+        return jsonify(data)
+
+    # DELETE
+    in_use = session.query(Enterprise).filter(Enterprise.category == category.name).first()
+    if in_use:
+        session.close()
+        abort(409, "category in use")
+
+    session.delete(category)
+    session.commit()
+    session.close()
+    return jsonify({"ok": True})
 
 
 @app.route("/api/enterprises", methods=["GET", "POST"])
