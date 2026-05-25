@@ -6,6 +6,8 @@ from sqlalchemy.orm import sessionmaker
 from models import Base, Category, Enterprise, Product, User
 import os
 import json
+import io
+from PIL import Image
 import uuid
 import re
 import unicodedata
@@ -50,8 +52,34 @@ def process_base64_image(data_url):
         filename = f"{uuid.uuid4().hex}.{ext}"
         filepath = os.path.join(UPLOAD_FOLDER, filename)
 
-        with open(filepath, "wb") as f:
-            f.write(file_data)
+        # compress/resize image to max 1080px while keeping aspect ratio
+        try:
+            image = Image.open(io.BytesIO(file_data))
+            max_dim = 1080
+            w, h = image.size
+            if w > max_dim or h > max_dim:
+                ratio = min(max_dim / w, max_dim / h)
+                new_size = (int(w * ratio), int(h * ratio))
+                image = image.resize(new_size, Image.LANCZOS)
+
+            if ext in ("jpg", "jpeg"):
+                image = image.convert("RGB")
+                image.save(filepath, format="JPEG", quality=85, optimize=True)
+            elif ext == "png":
+                image.save(filepath, format="PNG", optimize=True)
+            elif ext == "webp":
+                image.save(filepath, format="WEBP", quality=85)
+            elif ext == "gif":
+                try:
+                    image.save(filepath, format="GIF")
+                except Exception:
+                    image.convert("RGB").save(filepath, format="PNG", optimize=True)
+            else:
+                with open(filepath, "wb") as f:
+                    f.write(file_data)
+        except Exception:
+            with open(filepath, "wb") as f:
+                f.write(file_data)
 
         base_url = request.host_url.rstrip("/")
         return f"{base_url}/uploads/{filename}"
@@ -830,7 +858,37 @@ def upload_file():
         filename = secure_filename(file.filename)
         ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
         unique_filename = f"{uuid.uuid4().hex}.{ext}" if ext else uuid.uuid4().hex
-        file.save(os.path.join(UPLOAD_FOLDER, unique_filename))
+        filepath = os.path.join(UPLOAD_FOLDER, unique_filename)
+        try:
+            file.stream.seek(0)
+            image = Image.open(file.stream)
+            max_dim = 1080
+            w, h = image.size
+            if w > max_dim or h > max_dim:
+                ratio = min(max_dim / w, max_dim / h)
+                new_size = (int(w * ratio), int(h * ratio))
+                image = image.resize(new_size, Image.LANCZOS)
+
+            if ext in ("jpg", "jpeg"):
+                image = image.convert("RGB")
+                image.save(filepath, format="JPEG", quality=85, optimize=True)
+            elif ext == "png":
+                image.save(filepath, format="PNG", optimize=True)
+            elif ext == "webp":
+                image.save(filepath, format="WEBP", quality=85)
+            elif ext == "gif":
+                try:
+                    image.save(filepath, format="GIF")
+                except Exception:
+                    image.convert("RGB").save(filepath, format="PNG", optimize=True)
+            else:
+                file.stream.seek(0)
+                with open(filepath, "wb") as f:
+                    f.write(file.stream.read())
+        except Exception:
+            file.stream.seek(0)
+            with open(filepath, "wb") as f:
+                f.write(file.stream.read())
         return jsonify({"url": f"/uploads/{unique_filename}", "filename": unique_filename}), 201
     else:
         abort(400, "Invalid file type")
