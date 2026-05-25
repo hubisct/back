@@ -3,3 +3,4 @@ flask-cors
 SQLAlchemy
 alembic
 PyJWT
+python-dotenv

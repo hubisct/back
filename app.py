@@ -17,6 +17,7 @@ import sys
 import jwt
 import datetime
 from functools import wraps
+from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(__file__)
 DATA_DIR = os.environ.get("DATA_DIR") or BASE_DIR
@@ -117,7 +118,8 @@ def ensure_schema():
 ensure_schema()
 
 # JWT auth configuration
-JWT_SECRET = os.environ.get("JWT_SECRET") or "dev-jwt-secret-change-this"
+load_dotenv()
+JWT_SECRET = os.environ.get("JWT_SECRET")
 JWT_ALGORITHM = "HS256"
 JWT_EXP_HOURS = 24
 
