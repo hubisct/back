@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request, abort, send_from_directory
+from flask import g
 from flask_cors import CORS
 from sqlalchemy import create_engine, inspect, text, func
 from sqlalchemy.orm import sessionmaker
@@ -13,6 +14,9 @@ from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from validators import is_valid_email, is_valid_password, is_valid_brazil_phone, validate_base64_image
 import sys
+import jwt
+import datetime
+from functools import wraps
 
 BASE_DIR = os.path.dirname(__file__)
 DATA_DIR = os.environ.get("DATA_DIR") or BASE_DIR
@@ -111,6 +115,74 @@ def ensure_schema():
 
 
 ensure_schema()
+
+# JWT auth configuration
+JWT_SECRET = os.environ.get("JWT_SECRET") or "dev-jwt-secret-change-this"
+JWT_ALGORITHM = "HS256"
+JWT_EXP_HOURS = 24
+
+
+def _generate_token_for_user(user: User) -> str:
+    payload = {
+        "user_id": user.id,
+        "role": user.role,
+        "enterprise_id": user.enterprise_id,
+        "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=JWT_EXP_HOURS),
+    }
+    token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return token
+
+
+def _get_token_from_header():
+    auth = request.headers.get("Authorization")
+    if not auth:
+        abort(401, "authorization header missing")
+    parts = auth.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        abort(401, "invalid authorization header")
+    return parts[1]
+
+
+def _decode_token(token: str) -> dict:
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        abort(401, "token expired")
+    except jwt.InvalidTokenError:
+        abort(401, "invalid token")
+
+
+def _get_current_token_payload():
+    token = _get_token_from_header()
+    return _decode_token(token)
+
+
+def _require_admin():
+    payload = _get_current_token_payload()
+    if payload.get("role") != "admin":
+        abort(403, "admin required")
+    return payload
+
+
+def _require_authenticated():
+    return _get_current_token_payload()
+
+
+def _require_admin_or_enterprise_owner(ent_id: str):
+    payload = _get_current_token_payload()
+    if payload.get("role") == "admin":
+        return payload
+    if payload.get("enterprise_id") == ent_id:
+        return payload
+    abort(403, "not authorized")
+
+
+def _require_admin_or_same_user(user_id: str):
+    payload = _get_current_token_payload()
+    if payload.get("role") == "admin" or payload.get("user_id") == user_id:
+        return payload
+    abort(403, "not authorized")
 
 
 def _coerce_price_number(value):
@@ -377,8 +449,9 @@ def categories_list_create():
             data = [cat.name for cat in cats]
         session.close()
         return jsonify(data)
-
+    # POST: admin only
     payload = request.json or {}
+    _require_admin()
     name = (payload.get("name") or "").strip()
     if not name:
         session.close()
@@ -419,6 +492,8 @@ def category_detail(cat_id):
         return jsonify(data)
 
     if request.method == "PUT":
+        # admin only
+        _require_admin()
         payload = request.json or {}
         name = (payload.get("name") or "").strip()
         if not name:
@@ -450,6 +525,8 @@ def category_detail(cat_id):
         return jsonify(data)
 
     # DELETE
+    # admin only
+    _require_admin()
     in_use = session.query(Enterprise).filter(Enterprise.category == category.name).first()
     if in_use:
         session.close()
@@ -470,6 +547,8 @@ def enterprises_list_create():
         session.close()
         return jsonify(data)
 
+    # creating an enterprise requires authentication (owner or admin)
+    _require_authenticated()
     payload = request.json or {}
     if not payload.get("name"):
         abort(400, "name required")
@@ -510,6 +589,8 @@ def enterprise_detail(ent_id):
         return jsonify(data)
 
     if request.method == "PUT":
+        # only admin or enterprise owner
+        _require_admin_or_enterprise_owner(ent_id)
         payload = request.json or {}
         for k, v in payload.items():
             if k == "coverImage":
@@ -541,6 +622,8 @@ def enterprise_detail(ent_id):
         return jsonify(data)
 
     # DELETE
+    # only admin or enterprise owner
+    _require_admin_or_enterprise_owner(ent_id)
     session.delete(ent)
     session.commit()
     session.close()
@@ -554,6 +637,8 @@ def create_product(ent_id):
     if not ent:
         session.close()
         abort(404)
+    # only admin or enterprise owner
+    _require_admin_or_enterprise_owner(ent_id)
     payload = request.json or {}
     if not payload.get("name"):
         abort(400, "name required")
@@ -586,6 +671,8 @@ def modify_product(ent_id, prod_id):
     if not prod or prod.enterprise_id != ent_id:
         session.close()
         abort(404)
+    # only admin or enterprise owner
+    _require_admin_or_enterprise_owner(ent_id)
     if request.method == "PUT":
         payload = request.json or {}
         for k, v in payload.items():
@@ -618,11 +705,15 @@ def modify_product(ent_id, prod_id):
 def users_list_create():
     session = Session()
     if request.method == "GET":
+        # listing users is admin-only
+        _require_admin()
         users = session.query(User).all()
         data = [{"id": u.id, "email": u.email, "name": u.name, "role": u.role, "enterpriseId": u.enterprise_id, "active": u.active} for u in users]
         session.close()
         return jsonify(data)
 
+    # creating users is admin-only (no public signup)
+    _require_admin()
     payload = request.json or {}
     if not payload.get("email") or not payload.get("password"):
         abort(400, "email and password required")
@@ -654,8 +745,9 @@ def update_delete_user(user_id):
     if not user:
         session.close()
         abort(404, "User not found")
-
     if request.method == "PUT":
+        # admin or the user themselves
+        _require_admin_or_same_user(user_id)
         payload = request.json or {}
         
         # Validate email if provided
@@ -686,6 +778,8 @@ def update_delete_user(user_id):
         return jsonify(data)
 
     if request.method == "DELETE":
+        # admin or the user themselves
+        _require_admin_or_same_user(user_id)
         session.delete(user)
         session.commit()
         session.close()
@@ -710,7 +804,8 @@ def login():
         session.close()
         return jsonify({"ok": False}), 401
 
-    data = {"id": user.id, "email": user.email, "name": user.name, "role": user.role, "enterpriseId": user.enterprise_id, "active": user.active}
+    token = _generate_token_for_user(user)
+    data = {"id": user.id, "email": user.email, "name": user.name, "role": user.role, "enterpriseId": user.enterprise_id, "active": user.active, "token": token}
     session.close()
     return jsonify(data)
 
@@ -721,6 +816,9 @@ def download_file(name):
 
 @app.route("/api/upload", methods=["POST"])
 def upload_file():
+    # require authentication for uploads
+    _require_authenticated()
+
     if 'file' not in request.files:
         abort(400, "No file part")
     file = request.files['file']
