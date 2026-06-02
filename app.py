@@ -11,7 +11,7 @@ from PIL import Image
 import uuid
 import re
 import unicodedata
-from decimal import Decimal
+from decimal import Decimal, DecimalException
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from validators import is_valid_email, is_valid_password, is_valid_brazil_phone, validate_base64_image
@@ -119,6 +119,8 @@ def add_security_headers(response):
 
 PRICE_MODES = {"single", "range", "hidden"}
 DEFAULT_CATEGORIES = ["Artesanato", "Alimentação", "Moda", "Plantas", "Cosmética", "Reciclagem"]
+NAME_REQUIRED_ERROR = "name required"
+INVALID_EMAIL_ERROR = "invalid email"
 
 
 def ensure_schema():
@@ -221,12 +223,12 @@ def _coerce_price_number(value):
     if isinstance(value, (int, float, Decimal)):
         try:
             return Decimal(str(value)).quantize(Decimal("0.00"))
-        except:
+        except DecimalException:
             return None
     if isinstance(value, str):
         try:
             return Decimal(value).quantize(Decimal("0.00"))
-        except:
+        except DecimalException:
             return None
     return None
 
@@ -278,45 +280,41 @@ def _infer_product_price_mode(product: Product) -> str:
     return "single"
 
 
-def normalize_product_payload(payload: dict, current_product: Product | None = None) -> dict:
+def _resolve_product_price_mode(payload: dict, current_product: Product | None = None) -> str:
     raw_mode = payload.get("priceMode")
     if raw_mode is None:
-        if current_product is None:
-            mode = "single"
-        else:
-            mode = _infer_product_price_mode(current_product)
-    else:
-        mode = str(raw_mode).strip().lower()
+        return "single" if current_product is None else _infer_product_price_mode(current_product)
+    return str(raw_mode).strip().lower()
 
-    if mode not in PRICE_MODES:
-        abort(400, "priceMode inválido")
 
+def _hidden_price_payload() -> dict:
+    return {
+        "price_mode": "hidden",
+        "price": Decimal("0.00"),
+        "price_min": None,
+        "price_max": None,
+    }
+
+
+def _single_price_payload(payload: dict, current_product: Product | None = None) -> dict:
     current_price = current_product.price if current_product is not None else None
+    price_value = payload.get("price", current_price)
+    price = _coerce_price_number(price_value)
+    if price is None:
+        abort(400, "price obrigatório para modo single")
+    if price < 0:
+        abort(400, "valores de preço não podem ser negativos")
+    return {
+        "price_mode": "single",
+        "price": price,
+        "price_min": None,
+        "price_max": None,
+    }
+
+
+def _range_price_payload(payload: dict, current_product: Product | None = None) -> dict:
     current_price_min = current_product.price_min if current_product is not None else None
     current_price_max = current_product.price_max if current_product is not None else None
-
-    if mode == "hidden":
-        return {
-            "price_mode": "hidden",
-            "price": Decimal("0.00"),
-            "price_min": None,
-            "price_max": None,
-        }
-
-    if mode == "single":
-        price_value = payload.get("price", current_price)
-        price = _coerce_price_number(price_value)
-        if price is None:
-            abort(400, "price obrigatório para modo single")
-        if price < 0:
-            abort(400, "valores de preço não podem ser negativos")
-        return {
-            "price_mode": "single",
-            "price": price,
-            "price_min": None,
-            "price_max": None,
-        }
-
     price_min_value = payload.get("priceMin", current_price_min)
     price_max_value = payload.get("priceMax", current_price_max)
     price_min = _coerce_price_number(price_min_value)
@@ -335,6 +333,18 @@ def normalize_product_payload(payload: dict, current_product: Product | None = N
         "price_min": price_min,
         "price_max": price_max,
     }
+
+
+def normalize_product_payload(payload: dict, current_product: Product | None = None) -> dict:
+    mode = _resolve_product_price_mode(payload, current_product)
+    if mode not in PRICE_MODES:
+        abort(400, "priceMode inválido")
+
+    if mode == "hidden":
+        return _hidden_price_payload()
+    if mode == "single":
+        return _single_price_payload(payload, current_product)
+    return _range_price_payload(payload, current_product)
 
 
 def _normalize_image_list(value) -> list[str]:
@@ -461,7 +471,7 @@ def enterprise_to_dict(ent: Enterprise):
     }
 
 
-@app.route("/api/health")
+@app.route("/api/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"})
 
@@ -485,7 +495,7 @@ def categories_list_create():
     name = (payload.get("name") or "").strip()
     if not name:
         session.close()
-        abort(400, "name required")
+        abort(400, NAME_REQUIRED_ERROR)
 
     color = payload.get("color")
     emoji = payload.get("emoji")
@@ -508,54 +518,46 @@ def categories_list_create():
     return jsonify(data), 201
 
 
-@app.route("/api/categories/<string:cat_id>", methods=["GET", "PUT", "DELETE"])
-def category_detail(cat_id):
-    session = Session()
-    category = _get_category_by_id_or_name(session, cat_id)
-    if not category:
+def _category_detail_response(session, category: Category):
+    data = _category_to_dict(category)
+    session.close()
+    return jsonify(data)
+
+
+def _update_category_response(session, category: Category):
+    _require_admin()
+    payload = request.json or {}
+    name = (payload.get("name") or "").strip()
+    if not name:
         session.close()
-        abort(404)
+        abort(400, NAME_REQUIRED_ERROR)
 
-    if request.method == "GET":
-        data = _category_to_dict(category)
+    if "color" in payload:
+        category.color = payload.get("color")
+    if "emoji" in payload:
+        category.emoji = payload.get("emoji")
+
+    existing = session.query(Category).filter(func.lower(Category.name) == name.lower()).first()
+    if existing and existing.id != category.id:
         session.close()
-        return jsonify(data)
+        abort(409, "category already exists")
 
-    if request.method == "PUT":
-        # admin only
-        _require_admin()
-        payload = request.json or {}
-        name = (payload.get("name") or "").strip()
-        if not name:
-            session.close()
-            abort(400, "name required")
+    old_name = category.name
+    if name != old_name:
+        category.name = name
+        ents = session.query(Enterprise).filter(Enterprise.category == old_name).all()
+        for ent in ents:
+            ent.category = name
+            session.add(ent)
 
-        if "color" in payload:
-            category.color = payload.get("color")
-        if "emoji" in payload:
-            category.emoji = payload.get("emoji")
+    session.add(category)
+    session.commit()
+    data = _category_to_dict(category)
+    session.close()
+    return jsonify(data)
 
-        existing = session.query(Category).filter(func.lower(Category.name) == name.lower()).first()
-        if existing and existing.id != category.id:
-            session.close()
-            abort(409, "category already exists")
 
-        old_name = category.name
-        if name != old_name:
-            category.name = name
-            ents = session.query(Enterprise).filter(Enterprise.category == old_name).all()
-            for ent in ents:
-                ent.category = name
-                session.add(ent)
-
-        session.add(category)
-        session.commit()
-        data = _category_to_dict(category)
-        session.close()
-        return jsonify(data)
-
-    # DELETE
-    # admin only
+def _delete_category_response(session, category: Category):
     _require_admin()
     in_use = session.query(Enterprise).filter(Enterprise.category == category.name).first()
     if in_use:
@@ -566,6 +568,21 @@ def category_detail(cat_id):
     session.commit()
     session.close()
     return jsonify({"ok": True})
+
+
+@app.route("/api/categories/<string:cat_id>", methods=["GET", "PUT", "DELETE"])
+def category_detail(cat_id):
+    session = Session()
+    category = _get_category_by_id_or_name(session, cat_id)
+    if not category:
+        session.close()
+        abort(404)
+
+    if request.method == "GET":
+        return _category_detail_response(session, category)
+    if request.method == "PUT":
+        return _update_category_response(session, category)
+    return _delete_category_response(session, category)
 
 
 @app.route("/api/enterprises", methods=["GET", "POST"])
@@ -581,10 +598,10 @@ def enterprises_list_create():
     _require_authenticated()
     payload = request.json or {}
     if not payload.get("name"):
-        abort(400, "name required")
+        abort(400, NAME_REQUIRED_ERROR)
     # validate optional contact fields
     if payload.get("email") and not is_valid_email(payload.get("email")):
-        abort(400, "invalid email")
+        abort(400, INVALID_EMAIL_ERROR)
     if payload.get("whatsapp") and not is_valid_brazil_phone(payload.get("whatsapp")):
         abort(400, "invalid phone")
     new = Enterprise(
@@ -606,6 +623,60 @@ def enterprises_list_create():
     return jsonify(data), 201
 
 
+def _enterprise_detail_response(session, ent: Enterprise):
+    data = enterprise_to_dict(ent)
+    session.close()
+    return jsonify(data)
+
+
+def _apply_enterprise_updates(ent: Enterprise, payload: dict) -> None:
+    direct_fields = {
+        "tags": "tags",
+        "name": "name",
+        "category": "category",
+        "instagram": "instagram",
+    }
+    renamed_fields = {
+        "coverImage": ("cover_image", process_base64_image),
+        "description": ("short_description", lambda value: value),
+        "fullDescription": ("full_description", lambda value: value),
+    }
+
+    for key, value in payload.items():
+        if key in direct_fields:
+            setattr(ent, direct_fields[key], value)
+        elif key in renamed_fields:
+            attr_name, transform = renamed_fields[key]
+            setattr(ent, attr_name, transform(value))
+        elif key == "whatsapp":
+            if value and not is_valid_brazil_phone(value):
+                abort(400, "invalid phone")
+            ent.whatsapp = value
+        elif key == "email":
+            if value and not is_valid_email(value):
+                abort(400, INVALID_EMAIL_ERROR)
+            ent.email = value
+
+
+def _update_enterprise_response(session, ent: Enterprise, ent_id: str):
+    _require_admin_or_enterprise_owner(ent_id)
+    payload = request.json or {}
+    _apply_enterprise_updates(ent, payload)
+    session.add(ent)
+    session.commit()
+    data = enterprise_to_dict(ent)
+    session.close()
+    return jsonify(data)
+
+
+def _delete_enterprise_response(session, ent: Enterprise, ent_id: str):
+    _require_admin_or_enterprise_owner(ent_id)
+    session.delete(ent)
+    session.commit()
+    session.close()
+    return jsonify({"ok": True})
+
+
 @app.route("/api/enterprises/<string:ent_id>", methods=["GET", "PUT", "DELETE"])
 def enterprise_detail(ent_id):
     session = Session()
@@ -614,50 +685,10 @@ def enterprise_detail(ent_id):
         session.close()
         abort(404)
     if request.method == "GET":
-        data = enterprise_to_dict(ent)
-        session.close()
-        return jsonify(data)
-
+        return _enterprise_detail_response(session, ent)
     if request.method == "PUT":
-        # only admin or enterprise owner
-        _require_admin_or_enterprise_owner(ent_id)
-        payload = request.json or {}
-        for k, v in payload.items():
-            if k == "coverImage":
-                ent.cover_image = process_base64_image(v)
-            elif k == "description":
-                ent.short_description = v
-            elif k == "fullDescription":
-                ent.full_description = v
-            elif k == "tags":
-                ent.tags = v
-            elif k == "name":
-                ent.name = v
-            elif k == "category":
-                ent.category = v
-            elif k == "whatsapp":
-                if v and not is_valid_brazil_phone(v):
-                    abort(400, "invalid phone")
-                ent.whatsapp = v
-            elif k == "instagram":
-                ent.instagram = v
-            elif k == "email":
-                if v and not is_valid_email(v):
-                    abort(400, "invalid email")
-                ent.email = v
-        session.add(ent)
-        session.commit()
-        data = enterprise_to_dict(ent)
-        session.close()
-        return jsonify(data)
-
-    # DELETE
-    # only admin or enterprise owner
-    _require_admin_or_enterprise_owner(ent_id)
-    session.delete(ent)
-    session.commit()
-    session.close()
-    return jsonify({"ok": True})
+        return _update_enterprise_response(session, ent, ent_id)
+    return _delete_enterprise_response(session, ent, ent_id)
 
 
 @app.route("/api/enterprises/<string:ent_id>/products", methods=["POST"])
@@ -671,7 +702,7 @@ def create_product(ent_id):
     _require_admin_or_enterprise_owner(ent_id)
     payload = request.json or {}
     if not payload.get("name"):
-        abort(400, "name required")
+        abort(400, NAME_REQUIRED_ERROR)
     normalized_price = normalize_product_payload(payload)
     product_images = normalize_product_images_payload(payload)
     pid = payload.get("id") or f"{ent_id}-{int(__import__('time').time())}"
@@ -749,7 +780,7 @@ def users_list_create():
         abort(400, "email and password required")
     # validate email and password
     if not is_valid_email(payload.get("email")):
-        abort(400, "invalid email")
+        abort(400, INVALID_EMAIL_ERROR)
     if not is_valid_password(payload.get("password")):
         abort(400, "password must be at least 10 characters")
     new = User(
@@ -768,6 +799,59 @@ def users_list_create():
     return jsonify(data), 201
 
 
+def _user_to_dict(user: User) -> dict:
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "role": user.role,
+        "enterpriseId": user.enterprise_id,
+        "active": user.active,
+    }
+
+
+def _apply_user_updates(user: User, payload: dict) -> None:
+    direct_fields = {
+        "name": "name",
+        "role": "role",
+        "enterpriseId": "enterprise_id",
+        "active": "active",
+    }
+
+    if "email" in payload:
+        if not is_valid_email(payload["email"]):
+            abort(400, INVALID_EMAIL_ERROR)
+        user.email = payload["email"]
+
+    if "password" in payload and payload["password"]:
+        if not is_valid_password(payload["password"]):
+            abort(400, "password must be at least 10 characters")
+        user.password = generate_password_hash(payload["password"], method="pbkdf2:sha256", salt_length=16)
+
+    for key, attr_name in direct_fields.items():
+        if key in payload:
+            setattr(user, attr_name, payload[key])
+
+
+def _update_user_response(session, user: User, user_id: str):
+    _require_admin_or_same_user(user_id)
+    payload = request.json or {}
+    _apply_user_updates(user, payload)
+    session.add(user)
+    session.commit()
+    data = _user_to_dict(user)
+    session.close()
+    return jsonify(data)
+
+
+def _delete_user_response(session, user: User, user_id: str):
+    _require_admin_or_same_user(user_id)
+    session.delete(user)
+    session.commit()
+    session.close()
+    return jsonify({"ok": True})
+
+
 @app.route("/api/users/<string:user_id>", methods=["PUT", "DELETE"])
 def update_delete_user(user_id):
     session = Session()
@@ -776,44 +860,8 @@ def update_delete_user(user_id):
         session.close()
         abort(404, "User not found")
     if request.method == "PUT":
-        # admin or the user themselves
-        _require_admin_or_same_user(user_id)
-        payload = request.json or {}
-        
-        # Validate email if provided
-        if "email" in payload:
-            if not is_valid_email(payload["email"]):
-                abort(400, "invalid email")
-            user.email = payload["email"]
-            
-        # Validate password if provided
-        if "password" in payload and payload["password"]:
-            if not is_valid_password(payload["password"]):
-                abort(400, "password must be at least 10 characters")
-            user.password = generate_password_hash(payload["password"], method="pbkdf2:sha256", salt_length=16)
-
-        if "name" in payload:
-            user.name = payload["name"]
-        if "role" in payload:
-            user.role = payload["role"]
-        if "enterpriseId" in payload:
-            user.enterprise_id = payload["enterpriseId"]
-        if "active" in payload:
-            user.active = payload["active"]
-
-        session.add(user)
-        session.commit()
-        data = {"id": user.id, "email": user.email, "name": user.name, "role": user.role, "enterpriseId": user.enterprise_id, "active": user.active}
-        session.close()
-        return jsonify(data)
-
-    if request.method == "DELETE":
-        # admin or the user themselves
-        _require_admin_or_same_user(user_id)
-        session.delete(user)
-        session.commit()
-        session.close()
-        return jsonify({"ok": True})
+        return _update_user_response(session, user, user_id)
+    return _delete_user_response(session, user, user_id)
 
 
 @app.route("/api/login", methods=["POST"])
@@ -825,7 +873,7 @@ def login():
         abort(400, "email and password required")
     # validate formats
     if not is_valid_email(email):
-        abort(400, "invalid email")
+        abort(400, INVALID_EMAIL_ERROR)
     if not is_valid_password(password):
         abort(400, "invalid password")
     session = Session()
@@ -840,7 +888,7 @@ def login():
     return jsonify(data)
 
 
-@app.route('/uploads/<name>')
+@app.route("/uploads/<name>", methods=["GET"])
 def download_file(name):
     return send_from_directory(UPLOAD_FOLDER, name)
 

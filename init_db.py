@@ -18,6 +18,7 @@ engine = create_engine(f"sqlite:///{DB_PATH}", echo=False, future=True)
 Session = sessionmaker(bind=engine)
 
 DEFAULT_CATEGORIES = ["Artesanato", "Alimentação", "Moda", "Plantas", "Cosmética", "Reciclagem"]
+PASSWORD_HASH_METHOD = "pbkdf2:sha256"
 
 
 def _slugify(value: str) -> str:
@@ -30,19 +31,16 @@ def _slugify(value: str) -> str:
     return normalized
 
 
-def init_db(drop=False):
-    if drop and os.path.exists(DB_PATH):
-        os.remove(DB_PATH)
-    Base.metadata.create_all(engine)
-
-    session = Session()
-
-    # Seed categories
+def _collect_category_names() -> set[str]:
     category_names = set(DEFAULT_CATEGORIES)
     for enterprise in ENTERPRISES:
         if enterprise.get("category"):
             category_names.add(enterprise["category"])
+    return category_names
 
+
+def _seed_categories(session) -> None:
+    category_names = _collect_category_names()
     for name in sorted(category_names):
         existing = session.query(Category).filter_by(name=name).first()
         if existing:
@@ -53,7 +51,54 @@ def init_db(drop=False):
             cat_id = f"{slug}-{uuid.uuid4().hex[:6]}"
         session.add(Category(id=cat_id, name=name, color=None, emoji=None))
 
-    # Seed enterprises and products
+
+def _normalize_seed_product_price(product: dict) -> dict:
+    price_mode = product.get("price_mode") or "single"
+    price_min = product.get("price_min")
+    price_max = product.get("price_max")
+    price = product.get("price", Decimal("0.00"))
+
+    if price_mode == "range":
+        if price_min is None:
+            price_min = price
+        if price_max is None:
+            price_max = price_min
+        price = price_min
+    elif price_mode == "hidden":
+        price = Decimal("0.00")
+        price_min = None
+        price_max = None
+    else:
+        price_mode = "single"
+        price_min = None
+        price_max = None
+
+    return {
+        "price": price,
+        "price_mode": price_mode,
+        "price_min": price_min,
+        "price_max": price_max,
+    }
+
+
+def _seed_product(session, enterprise_id: str, product: dict) -> None:
+    normalized_price = _normalize_seed_product_price(product)
+    prod = Product(
+        id=product["id"],
+        enterprise_id=enterprise_id,
+        name=product["name"],
+        description=product.get("description"),
+        price=normalized_price["price"],
+        price_mode=normalized_price["price_mode"],
+        price_min=normalized_price["price_min"],
+        price_max=normalized_price["price_max"],
+        image=product.get("image"),
+        images=product.get("images") or ([product.get("image")] if product.get("image") else []),
+    )
+    session.add(prod)
+
+
+def _seed_enterprises_and_products(session) -> None:
     for e in ENTERPRISES:
         ent = Enterprise(
             id=e["id"],
@@ -69,47 +114,17 @@ def init_db(drop=False):
         )
         session.add(ent)
         for p in e.get("products", []):
-            price_mode = p.get("price_mode") or "single"
-            price_min = p.get("price_min")
-            price_max = p.get("price_max")
-            price = p.get("price", Decimal("0.00"))
-            if price_mode == "range":
-                if price_min is None:
-                    price_min = price
-                if price_max is None:
-                    price_max = price_min
-                price = price_min
-            elif price_mode == "hidden":
-                price = Decimal("0.00")
-                price_min = None
-                price_max = None
-            else:
-                price_mode = "single"
-                price_min = None
-                price_max = None
+            _seed_product(session, e["id"], p)
 
-            prod = Product(
-                id=p["id"],
-                enterprise_id=e["id"],
-                name=p["name"],
-                description=p.get("description"),
-                price=price,
-                price_mode=price_mode,
-                price_min=price_min,
-                price_max=price_max,
-                image=p.get("image"),
-                images=p.get("images") or ([p.get("image")] if p.get("image") else []),
-            )
-            session.add(prod)
 
-    # Seed users
+def _seed_users(session) -> None:
     for u in USERS:
         existing_user = session.query(User).filter_by(id=u["id"]).first()
         if not existing_user:
             user = User(
                 id=u["id"],
                 email=u["email"],
-                password=generate_password_hash(u["password"], method="pbkdf2:sha256", salt_length=16),
+                password=generate_password_hash(u["password"], method=PASSWORD_HASH_METHOD, salt_length=16),
                 name=u.get("name"),
                 role=u.get("role", "owner"),
                 active=u.get("active", True),
@@ -117,13 +132,25 @@ def init_db(drop=False):
             )
             session.add(user)
 
-    # Converter senhas em texto puro já existentes no banco para hashes seguros
+
+def _upgrade_plain_text_passwords(session) -> None:
     all_users = session.query(User).all()
     for db_user in all_users:
-        if not db_user.password.startswith("pbkdf2:sha256"):
-            db_user.password = generate_password_hash(db_user.password, method="pbkdf2:sha256", salt_length=16)
+        if not db_user.password.startswith(PASSWORD_HASH_METHOD):
+            db_user.password = generate_password_hash(db_user.password, method=PASSWORD_HASH_METHOD, salt_length=16)
             session.add(db_user)
 
+
+def init_db(drop=False):
+    if drop and os.path.exists(DB_PATH):
+        os.remove(DB_PATH)
+    Base.metadata.create_all(engine)
+
+    session = Session()
+    _seed_categories(session)
+    _seed_enterprises_and_products(session)
+    _seed_users(session)
+    _upgrade_plain_text_passwords(session)
     session.commit()
     session.close()
 

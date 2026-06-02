@@ -19,6 +19,7 @@ COPY . .
 # ---------- Create required directories ----------
 RUN mkdir -p /app/uploads /app/data
 
+
 # ---------- Expose port ----------
 EXPOSE 5174
 
