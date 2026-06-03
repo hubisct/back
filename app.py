@@ -476,20 +476,25 @@ def health():
     return jsonify({"status": "ok"})
 
 
-@app.route("/api/categories", methods=["GET", "POST"])
-def categories_list_create():
+@app.route("/api/categories", methods=["GET"])
+def list_categories():
     session = Session()
     _ensure_default_categories(session)
 
-    if request.method == "GET":
-        cats = session.query(Category).order_by(Category.name).all()
-        if request.args.get("format") == "objects":
-            data = [_category_to_dict(cat) for cat in cats]
-        else:
-            data = [cat.name for cat in cats]
-        session.close()
-        return jsonify(data)
-    # POST: admin only
+    cats = session.query(Category).order_by(Category.name).all()
+    if request.args.get("format") == "objects":
+        data = [_category_to_dict(cat) for cat in cats]
+    else:
+        data = [cat.name for cat in cats]
+    session.close()
+    return jsonify(data)
+
+
+@app.route("/api/categories", methods=["POST"])
+def create_category():
+    session = Session()
+    _ensure_default_categories(session)
+
     payload = request.json or {}
     _require_admin()
     name = (payload.get("name") or "").strip()
@@ -570,31 +575,48 @@ def _delete_category_response(session, category: Category):
     return jsonify({"ok": True})
 
 
-@app.route("/api/categories/<string:cat_id>", methods=["GET", "PUT", "DELETE"])
+@app.route("/api/categories/<string:cat_id>", methods=["GET"])
 def category_detail(cat_id):
     session = Session()
     category = _get_category_by_id_or_name(session, cat_id)
     if not category:
         session.close()
         abort(404)
+    return _category_detail_response(session, category)
 
-    if request.method == "GET":
-        return _category_detail_response(session, category)
-    if request.method == "PUT":
-        return _update_category_response(session, category)
+
+@app.route("/api/categories/<string:cat_id>", methods=["PUT"])
+def update_category(cat_id):
+    session = Session()
+    category = _get_category_by_id_or_name(session, cat_id)
+    if not category:
+        session.close()
+        abort(404)
+    return _update_category_response(session, category)
+
+
+@app.route("/api/categories/<string:cat_id>", methods=["DELETE"])
+def delete_category(cat_id):
+    session = Session()
+    category = _get_category_by_id_or_name(session, cat_id)
+    if not category:
+        session.close()
+        abort(404)
     return _delete_category_response(session, category)
 
 
-@app.route("/api/enterprises", methods=["GET", "POST"])
-def enterprises_list_create():
+@app.route("/api/enterprises", methods=["GET"])
+def list_enterprises():
     session = Session()
-    if request.method == "GET":
-        ents = session.query(Enterprise).all()
-        data = [enterprise_to_dict(e) for e in ents]
-        session.close()
-        return jsonify(data)
+    ents = session.query(Enterprise).all()
+    data = [enterprise_to_dict(e) for e in ents]
+    session.close()
+    return jsonify(data)
 
-    # creating an enterprise requires authentication (owner or admin)
+
+@app.route("/api/enterprises", methods=["POST"])
+def create_enterprise():
+    session = Session()
     _require_authenticated()
     payload = request.json or {}
     if not payload.get("name"):
@@ -677,17 +699,33 @@ def _delete_enterprise_response(session, ent: Enterprise, ent_id: str):
     return jsonify({"ok": True})
 
 
-@app.route("/api/enterprises/<string:ent_id>", methods=["GET", "PUT", "DELETE"])
+@app.route("/api/enterprises/<string:ent_id>", methods=["GET"])
 def enterprise_detail(ent_id):
     session = Session()
     ent = session.get(Enterprise, ent_id)
     if not ent:
         session.close()
         abort(404)
-    if request.method == "GET":
-        return _enterprise_detail_response(session, ent)
-    if request.method == "PUT":
-        return _update_enterprise_response(session, ent, ent_id)
+    return _enterprise_detail_response(session, ent)
+
+
+@app.route("/api/enterprises/<string:ent_id>", methods=["PUT"])
+def update_enterprise(ent_id):
+    session = Session()
+    ent = session.get(Enterprise, ent_id)
+    if not ent:
+        session.close()
+        abort(404)
+    return _update_enterprise_response(session, ent, ent_id)
+
+
+@app.route("/api/enterprises/<string:ent_id>", methods=["DELETE"])
+def delete_enterprise(ent_id):
+    session = Session()
+    ent = session.get(Enterprise, ent_id)
+    if not ent:
+        session.close()
+        abort(404)
     return _delete_enterprise_response(session, ent, ent_id)
 
 
@@ -762,18 +800,19 @@ def modify_product(ent_id, prod_id):
     return jsonify({"ok": True})
 
 
-@app.route("/api/users", methods=["GET", "POST"])
-def users_list_create():
+@app.route("/api/users", methods=["GET"])
+def list_users():
     session = Session()
-    if request.method == "GET":
-        # listing users is admin-only
-        _require_admin()
-        users = session.query(User).all()
-        data = [{"id": u.id, "email": u.email, "name": u.name, "role": u.role, "enterpriseId": u.enterprise_id, "active": u.active} for u in users]
-        session.close()
-        return jsonify(data)
+    _require_admin()
+    users = session.query(User).all()
+    data = [{"id": u.id, "email": u.email, "name": u.name, "role": u.role, "enterpriseId": u.enterprise_id, "active": u.active} for u in users]
+    session.close()
+    return jsonify(data)
 
-    # creating users is admin-only (no public signup)
+
+@app.route("/api/users", methods=["POST"])
+def create_user():
+    session = Session()
     _require_admin()
     payload = request.json or {}
     if not payload.get("email") or not payload.get("password"):
