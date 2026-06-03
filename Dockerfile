@@ -14,10 +14,15 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ---------- Copy application code ----------
-COPY . .
+COPY app.py init_db.py models.py seed_data.py validators.py ./
 
-# ---------- Create required directories ----------
-RUN mkdir -p /app/uploads /app/data
+# ---------- Create runtime user and writable directories ----------
+RUN addgroup --system appgroup \
+    && adduser --system --ingroup appgroup appuser \
+    && mkdir -p /app/uploads /app/data \
+    && chown -R appuser:appgroup /app
+
+USER appuser
 
 
 # ---------- Expose port ----------
