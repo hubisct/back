@@ -25,10 +25,10 @@ Ao iniciar o ambiente com Docker, a inicialização do banco de dados SQLite é 
 
 ### Volumes persistentes
 
-| Volume | Caminho no container | Descrição |
-|---|---|---|
-| `uploads_data` | `/app/uploads` | Imagens enviadas via upload |
-| `db_data` | `/app/data` | Banco de dados SQLite |
+| Volume         | Caminho no container | Descrição                   |
+| -------------- | -------------------- | --------------------------- |
+| `uploads_data` | `/app/uploads`       | Imagens enviadas via upload |
+| `db_data`      | `/app/data`          | Banco de dados SQLite       |
 
 Para resetar os dados, remova os volumes:
 
@@ -97,15 +97,15 @@ python app.py
 
 ## Endpoints principais
 
-| Método | Rota | Descrição |
-|---|---|---|
-| GET | `/api/health` | Health check |
-| GET/POST | `/api/categories` | Listar / criar categorias |
-| GET/PUT/DELETE | `/api/categories/<string:cat_id>` | Detalhe / editar / remover categoria |
-| GET/POST | `/api/enterprises` | Listar / criar empreendimentos |
-| GET/PUT/DELETE | `/api/enterprises/<string:ent_id>` | Detalhe / editar / remover empreendimento |
-| POST | `/api/enterprises/<string:ent_id>/products` | Criar produto |
-| PUT/DELETE | `/api/enterprises/<string:ent_id>/products/<string:prod_id>` | Editar / remover produto |
-| GET/POST | `/api/users` | Listar / criar usuários |
-| POST | `/api/login` | Autenticação |
-| POST | `/api/upload` | Upload de arquivo |
+| Método         | Rota                                                         | Descrição                                 |
+| -------------- | ------------------------------------------------------------ | ----------------------------------------- |
+| GET            | `/api/health`                                                | Health check                              |
+| GET/POST       | `/api/categories`                                            | Listar / criar categorias                 |
+| GET/PUT/DELETE | `/api/categories/<string:cat_id>`                            | Detalhe / editar / remover categoria      |
+| GET/POST       | `/api/enterprises`                                           | Listar / criar empreendimentos            |
+| GET/PUT/DELETE | `/api/enterprises/<string:ent_id>`                           | Detalhe / editar / remover empreendimento |
+| POST           | `/api/enterprises/<string:ent_id>/products`                  | Criar produto                             |
+| PUT/DELETE     | `/api/enterprises/<string:ent_id>/products/<string:prod_id>` | Editar / remover produto                  |
+| GET/POST       | `/api/users`                                                 | Listar / criar usuários                   |
+| POST           | `/api/login`                                                 | Autenticação                              |
+| POST           | `/api/upload`                                                | Upload de arquivo                         |

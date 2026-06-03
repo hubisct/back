@@ -3,7 +3,7 @@ from flask import g
 from flask_cors import CORS
 from sqlalchemy import create_engine, inspect, text, func
 from sqlalchemy.orm import sessionmaker
-from models import Base, Category, Enterprise, Product, User
+from models import Base, Category, Enterprise, Product, User, SupportRequest
 import os
 import json
 import io
@@ -843,6 +843,47 @@ def login():
 @app.route('/uploads/<name>')
 def download_file(name):
     return send_from_directory(UPLOAD_FOLDER, name)
+
+
+@app.route("/api/support", methods=["GET", "POST"])
+def support_requests():
+    session = Session()
+    # GET: admin-only list of support requests
+    if request.method == "GET":
+        _require_admin()
+        reqs = session.query(SupportRequest).order_by(SupportRequest.created_at.desc()).all()
+        data = [
+            {
+                "id": r.id,
+                "type": r.type,
+                "comment": r.comment,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in reqs
+        ]
+        session.close()
+        return jsonify(data)
+
+    # POST: public endpoint to create a support request
+    payload = request.json or {}
+    support_type = (payload.get("type") or payload.get("supportType") or "").strip()
+    comment = (payload.get("comment") or payload.get("supportComment") or "").strip()
+
+    if not support_type or not comment:
+        session.close()
+        abort(400, "type and comment required")
+
+    allowed = {"report bug", "suggestion", "feedback", "report violation"}
+    if support_type not in allowed:
+        session.close()
+        abort(400, "invalid type")
+
+    sid = payload.get("id") or f"support-{int(__import__('time').time())}-{uuid.uuid4().hex[:6]}"
+    req = SupportRequest(id=sid, type=support_type, comment=comment)
+    session.add(req)
+    session.commit()
+    session.close()
+    return jsonify({"ok": True, "id": sid}), 201
 
 @app.route("/api/upload", methods=["POST"])
 def upload_file():

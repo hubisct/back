@@ -72,3 +72,11 @@ class User(Base):
     role = Column(String, default="owner")
     active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SupportRequest(Base):
+    __tablename__ = "support_requests"
+    id = Column(String, primary_key=True)
+    type = Column(String, nullable=False)
+    comment = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

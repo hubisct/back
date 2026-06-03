@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from werkzeug.security import generate_password_hash
-from models import Base, Category, Enterprise, Product, User
+from models import Base, Category, Enterprise, Product, User, SupportRequest
 from seed_data import ENTERPRISES, USERS
 import os
 from decimal import Decimal
