@@ -969,7 +969,7 @@ def upload_file():
     else:
         abort(400, "Invalid file type")
 
-def define_cors_policy():
+def define_cors_policy(debug):
     if debug:
         CORS(app)
     else:
