@@ -21,6 +21,8 @@ import datetime
 from functools import wraps
 from dotenv import load_dotenv
 
+app = Flask(__name__)
+
 BASE_DIR = os.path.dirname(__file__)
 DATA_DIR = os.environ.get("DATA_DIR") or BASE_DIR
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -89,19 +91,6 @@ def process_base64_image(data_url):
 
 engine = create_engine(f"sqlite:///{DB_PATH}", echo=False, future=True)
 Session = sessionmaker(bind=engine)
-
-app = Flask(__name__)
-CORS(
-    app,
-    resources={
-        r"/api/*": {
-            "origins": [
-                "https://test-vitrine.brizzigui.com",
-                "https://vitrine.brizzigui.com",
-            ]
-        }
-    },
-)
 
 
 @app.after_request
@@ -980,12 +969,30 @@ def upload_file():
     else:
         abort(400, "Invalid file type")
 
+def define_cors_policy():
+    if debug:
+        CORS(app)
+    else:
+        CORS(
+            app,
+            resources={
+                r"/api/*": {
+                    "origins": [
+                        "https://test-vitrine.brizzigui.com",
+                        "https://vitrine.brizzigui.com",
+                    ]
+                }
+            },
+        )
 
 if __name__ == "__main__":
     # create DB if missing
     if not os.path.exists(DB_PATH):
         print("DB not found, run init_db.py to create and seed the database.")
     if len(sys.argv) == 3:
-      port = int(sys.argv[1])
-      debug = bool(sys.argv[2] == "True")
+        port = int(sys.argv[1])
+        debug = bool(sys.argv[2] == "True")
+    
+    define_cors_policy(debug)
+
     app.run(host="0.0.0.0", port=port, debug=debug)
