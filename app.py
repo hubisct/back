@@ -892,6 +892,12 @@ def update_delete_user(user_id):
     return _delete_user_response(session, user, user_id)
 
 
+@app.route("/api/auth/verify", methods=["GET"])
+def verify_auth():
+    _require_authenticated()
+    return jsonify({"ok": True})
+
+
 @app.route("/api/login", methods=["POST"])
 def login():
     payload = request.json or {}
