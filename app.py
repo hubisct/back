@@ -597,7 +597,7 @@ def delete_category(cat_id):
 @app.route("/api/enterprises", methods=["GET"])
 def list_enterprises():
     session = Session()
-    ents = session.query(Enterprise).all()
+    ents = session.query(Enterprise).order_by(Enterprise.updated_at.desc()).all()
     data = [enterprise_to_dict(e) for e in ents]
     session.close()
     return jsonify(data)
@@ -745,6 +745,8 @@ def create_product(ent_id):
         image=product_images[0] if product_images else "",
         images=product_images,
     )
+    ent.updated_at = datetime.datetime.utcnow()
+    session.add(ent)
     session.add(prod)
     session.commit()
     data = product_to_dict(prod)
@@ -761,6 +763,12 @@ def modify_product(ent_id, prod_id):
         abort(404)
     # only admin or enterprise owner
     _require_admin_or_enterprise_owner(ent_id)
+    
+    ent = session.get(Enterprise, ent_id)
+    if ent:
+        ent.updated_at = datetime.datetime.utcnow()
+        session.add(ent)
+
     if request.method == "PUT":
         payload = request.json or {}
         for k, v in payload.items():
